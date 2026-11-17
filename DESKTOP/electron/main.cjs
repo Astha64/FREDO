@@ -5,8 +5,8 @@ const DEV_URL = 'http://127.0.0.1:5173';
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 300,
-    height: 320,
+    width: 340,
+    height: 440,
     frame: false,
     transparent: true,
     resizable: false,
