@@ -8,9 +8,10 @@ const OFFLINE = "I can't reach my backend right now. Please start it and try aga
 
 type Props = {
   onMessage: (text: string, isError: boolean) => void;
+  onCelebrate: () => void;
 };
 
-function TaskPanel({ onMessage }: Props) {
+function TaskPanel({ onMessage, onCelebrate }: Props) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -59,6 +60,7 @@ function TaskPanel({ onMessage }: Props) {
   async function handleDone(id: number) {
     try {
       await completeTask(id);
+      onCelebrate();
       onMessage("Nice! One less thing to worry about.", false);
       await refresh();
     } catch {

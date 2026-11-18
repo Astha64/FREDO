@@ -699,8 +699,25 @@ body {
   gap: 8px;
 }
 
-/* angry mood */
+/* ===== Phase 6B: wrapper, moods, actions, effects ===== */
+
+.fredo-flip {
+  width: 200px;
+  height: 220px;
+  flex-shrink: 0;
+}
+
+.fredo-flip.flip {
+  transform: scaleX(-1);
+}
+
+.flip .sleep-eyes {
+  transform: scaleX(-1);
+}
+
+/* eyebrows: hidden unless a mood needs them */
 .brow {
+  display: none;
   position: absolute;
   top: 44px;
   width: 26px;
@@ -711,40 +728,414 @@ body {
 
 .brow-left {
   left: 21px;
-  transform: rotate(18deg);
+  right: auto;
 }
 
 .brow-right {
   right: 21px;
+  left: auto;
+}
+
+/* sleepy */
+.mood-sleepy .eye {
+  animation: none;
+  clip-path: inset(45% 0 0 0);
+}
+
+.mood-sleepy .mouth {
+  left: 54px;
+  width: 11px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+/* angry */
+.mood-angry .brow {
+  display: block;
+}
+
+.mood-angry .brow-left {
+  transform: rotate(18deg);
+}
+
+.mood-angry .brow-right {
   transform: rotate(-18deg);
 }
 
-.angry .cheek {
+.mood-angry .cheek {
   background: #e5533d;
   opacity: 0.9;
 }
 
-.angry .mouth {
-  top: 82px;
+.mood-angry .mouth {
+  top: 83px;
   width: 16px;
   height: 6px;
   border-radius: 12px 12px 3px 3px;
 }
 
-.angry .head {
+.mood-angry .head {
   animation: shake 0.35s ease-in-out 3;
 }
 
+/* sarcastic: one raised brow, heavy eyelids, smirk */
+.mood-sarcastic .eye {
+  clip-path: inset(35% 0 0 0);
+}
+
+.mood-sarcastic .brow {
+  display: block;
+}
+
+.mood-sarcastic .brow-left {
+  top: 46px;
+  transform: rotate(4deg);
+}
+
+.mood-sarcastic .brow-right {
+  top: 37px;
+  transform: rotate(-14deg);
+}
+
+.mood-sarcastic .mouth {
+  left: 57px;
+  width: 14px;
+  height: 7px;
+  border-radius: 2px 10px 10px 8px;
+  transform: rotate(-12deg);
+}
+
+/* surprised */
+.mood-surprised .eye {
+  animation: none;
+  transform: scale(1.25);
+}
+
+.mood-surprised .brow {
+  display: block;
+  top: 36px;
+}
+
+.mood-surprised .mouth {
+  top: 80px;
+  left: 54px;
+  width: 12px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+.mood-surprised .sweat-drop {
+  display: block;
+}
+
+/* thinking */
+.mood-thinking .eye span {
+  margin: 1px 1px 0 9px;
+}
+
+.mood-thinking .brow-left {
+  display: block;
+  top: 40px;
+  transform: rotate(-10deg);
+}
+
+.mood-thinking .mouth {
+  left: 58px;
+  width: 9px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.mood-thinking .think-dots {
+  display: flex;
+}
+
+/* proud: happy closed eyes, big smile, glowing star */
+.mood-proud .eye {
+  animation: none;
+  height: 8px;
+  margin-top: 10px;
+  background: transparent;
+  border-top: 4px solid #70402d;
+  border-radius: 50% 50% 0 0;
+}
+
+.mood-proud .eye span {
+  display: none;
+}
+
+.mood-proud .mouth {
+  left: 50px;
+  width: 20px;
+  height: 11px;
+}
+
+.mood-proud .cheek {
+  opacity: 1;
+}
+
+.mood-proud .chest-star {
+  animation: glow 0.9s ease-in-out infinite alternate;
+}
+
+/* sad */
+.mood-sad .brow {
+  display: block;
+  top: 42px;
+}
+
+.mood-sad .brow-left {
+  transform: rotate(-18deg);
+}
+
+.mood-sad .brow-right {
+  transform: rotate(18deg);
+}
+
+.mood-sad .mouth {
+  top: 83px;
+  width: 14px;
+  height: 6px;
+  border-radius: 12px 12px 3px 3px;
+}
+
+.mood-sad .head {
+  transform: translateY(4px);
+}
+
+.mood-sad .sparkle {
+  opacity: 0.25;
+}
+
+.mood-sad .sweat-drop {
+  display: block;
+}
+
+.sleeping .brow,
+.sleeping .think-dots,
+.sleeping .sweat-drop {
+  display: none;
+}
+
+/* talking: the mouth opens and closes */
+.talking .mouth {
+  animation: talk 0.22s ease-in-out infinite alternate;
+}
+
+/* actions */
+.act-wave .arm-right {
+  animation: wave-up-right 0.55s ease-in-out 3;
+}
+
+.fredo-character.act-jump {
+  animation: jump 0.45s ease-out 2;
+}
+
+.fredo-character.act-dance {
+  animation: dance 0.5s ease-in-out 6 alternate;
+}
+
+.act-dance .arm-left {
+  animation: wave-up-left 0.4s ease-in-out infinite alternate;
+}
+
+.act-dance .arm-right {
+  animation: wave-up-right 0.4s ease-in-out infinite alternate-reverse;
+}
+
+.act-yawn .mouth {
+  animation: yawn 1.8s ease-in-out;
+}
+
+.act-yawn .eyes {
+  animation: squint 1.8s ease-in-out;
+}
+
+.act-stretch .arm-left {
+  animation: none;
+  transform: rotate(165deg);
+}
+
+.act-stretch .arm-right {
+  animation: none;
+  transform: rotate(-165deg);
+}
+
+.act-stretch .body {
+  transform: scaleY(1.1) translateY(-4px);
+}
+
+.act-look .eyes {
+  animation: look 2.5s ease-in-out;
+}
+
+/* effects */
+.sweat-drop {
+  display: none;
+  position: absolute;
+  top: 28px;
+  right: 8px;
+  width: 9px;
+  height: 13px;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: #7cc8ff;
+  animation: drip 1.4s ease-in infinite;
+}
+
+.think-dots {
+  display: none;
+  position: absolute;
+  top: -22px;
+  right: -8px;
+  gap: 5px;
+}
+
+.think-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.25);
+  animation: dots 1.2s ease-in-out infinite;
+}
+
+.think-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.think-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.confetti-layer {
+  position: absolute;
+  inset: -30px 0 0 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.confetti {
+  position: absolute;
+  top: 0;
+  width: 7px;
+  height: 11px;
+  border-radius: 2px;
+  animation: confetti-fall 1.8s ease-in infinite;
+}
+
+/* walking (used in 6B-2) */
+.fredo-character.walking {
+  animation: bob 0.45s ease-in-out infinite;
+}
+
+.walking .leg-left {
+  animation: step-left 0.45s ease-in-out infinite;
+}
+
+.walking .leg-right {
+  animation: step-right 0.45s ease-in-out infinite;
+}
+
+.walking .arm-left {
+  animation: swing-left 0.45s ease-in-out infinite;
+}
+
+.walking .arm-right {
+  animation: swing-right 0.45s ease-in-out infinite;
+}
+
+/* keyframes */
 @keyframes shake {
-  0%, 100% {
-    transform: translateX(0);
-  }
-  25% {
-    transform: translateX(-4px);
-  }
-  75% {
-    transform: translateX(4px);
-  }
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+@keyframes talk {
+  from { height: 4px; }
+  to { height: 13px; }
+}
+
+@keyframes glow {
+  from { text-shadow: 0 0 6px #ffe69b; }
+  to { text-shadow: 0 0 18px #ffc83d; transform: scale(1.25); }
+}
+
+@keyframes wave-up-right {
+  0%, 100% { transform: rotate(-25deg); }
+  50% { transform: rotate(-140deg); }
+}
+
+@keyframes wave-up-left {
+  0%, 100% { transform: rotate(25deg); }
+  50% { transform: rotate(140deg); }
+}
+
+@keyframes jump {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-26px); }
+}
+
+@keyframes dance {
+  from { transform: translateX(-6px) rotate(-5deg); }
+  to { transform: translateX(6px) rotate(5deg); }
+}
+
+@keyframes yawn {
+  0%, 100% { height: 10px; width: 15px; }
+  40%, 70% { height: 18px; width: 14px; border-radius: 50%; }
+}
+
+@keyframes squint {
+  0%, 100% { transform: scaleY(1); }
+  40%, 70% { transform: scaleY(0.4); }
+}
+
+@keyframes look {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  70% { transform: translateX(5px); }
+}
+
+@keyframes drip {
+  0% { transform: translateY(-3px); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateY(12px); opacity: 0; }
+}
+
+@keyframes dots {
+  0%, 100% { transform: translateY(0); opacity: 0.5; }
+  50% { transform: translateY(-5px); opacity: 1; }
+}
+
+@keyframes confetti-fall {
+  0% { transform: translateY(-10px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(240px) rotate(540deg); opacity: 0; }
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes step-left {
+  0%, 100% { transform: rotate(28deg); }
+  50% { transform: rotate(-24deg); }
+}
+
+@keyframes step-right {
+  0%, 100% { transform: rotate(-24deg); }
+  50% { transform: rotate(28deg); }
+}
+
+@keyframes swing-left {
+  0%, 100% { transform: rotate(-20deg); }
+  50% { transform: rotate(40deg); }
+}
+
+@keyframes swing-right {
+  0%, 100% { transform: rotate(20deg); }
+  50% { transform: rotate(-40deg); }
 }
 
 @keyframes bubble-pop {
