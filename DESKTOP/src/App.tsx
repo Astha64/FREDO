@@ -1,28 +1,108 @@
-import { useState } from "react";
+// desktop/src/App.tsx
+import { useEffect, useRef, useState } from "react";
 import type { SyntheticEvent } from "react";
+import Character from "./Character";
+import TaskPanel from "./TaskPanel";
+import { API_URL } from "./api";
 
-const API_URL = "http://127.0.0.1:8000";
+const WIDTH = 340;
+const BASE_HEIGHT = 400;
+const CHAT_EXTRA = 50;
+const PANEL_EXTRA = 300;
+const BUBBLE_SECONDS = 15;
+
+type Open = "none" | "chat" | "tasks";
 
 function App() {
   const [sleeping, setSleeping] = useState(false);
-
+  const [angry, setAngry] = useState(false);
+  const [open, setOpen] = useState<Open>("none");
   const [text, setText] = useState("");
-  const [reply, setReply] = useState("Hi! Type a message and press Send.");
+  const [reply, setReply] = useState("");
   const [isError, setIsError] = useState(false);
+  const [bubbleVisible, setBubbleVisible] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const bubbleTimer = useRef<number | undefined>(undefined);
+
+    const speechRun = useRef(0);
+
+  // Put one message in the bubble. It hides itself later.
+  function show(message: string, error: boolean) {
+    setReply(message);
+    setIsError(error);
+    setBubbleVisible(true);
+    window.clearTimeout(bubbleTimer.current);
+    bubbleTimer.current = window.setTimeout(
+      () => setBubbleVisible(false),
+      BUBBLE_SECONDS * 1000
+    );
+  }
+
+  // Fredo says one thing (this also stops a greeting that is still going)
+  function say(message: string, error: boolean) {
+    speechRun.current += 1;
+    show(message, error);
+  }
+
+  // Fredo says several lines, one after another, like a person talking
+  async function sayLines(lines: string[]) {
+    speechRun.current += 1;
+    const run = speechRun.current;
+
+    for (let i = 0; i < lines.length; i++) {
+      if (speechRun.current !== run) return; // something newer started
+      show(lines[i], false);
+
+      if (i < lines.length - 1) {
+        // the pause after each line. Change 2500 to make him wait longer.
+        const readTime = Math.max(2500, 1500 + lines[i].length * 55);
+        await new Promise((resolve) => setTimeout(resolve, readTime));
+      }
+    }
+  }
+
+  // Greet by himself when the app opens
+  useEffect(() => {
+    async function greet() {
+      // the backend may still be starting, so try a few times
+      for (let attempt = 0; attempt < 8; attempt++) {
+        try {
+          const response = await fetch(API_URL + "/greeting");
+          if (!response.ok) throw new Error("bad status");
+          const data = await response.json();
+          sayLines(data.lines);
+          return;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+      say("I could not reach my backend. Please start it.", true);
+    }
+    greet();
+  }, []);
+
+  // Make the window the right size for what is open
+  useEffect(() => {
+    let height = BASE_HEIGHT;
+    if (open === "chat") height += CHAT_EXTRA;
+    if (open === "tasks") height += PANEL_EXTRA;
+    window.fredo?.resizeWindow(WIDTH, height);
+  }, [open]);
+
+  function toggle(target: "chat" | "tasks") {
+    setOpen(open === target ? "none" : target);
+  }
 
   async function sendMessage() {
     const message = text.trim();
 
     if (message === "") {
-      setReply("Please type a message first.");
-      setIsError(true);
+      say("Please type a message first.", true);
       return;
     }
 
     setIsSending(true);
     try {
-      // PHASE 4: now calls /messages and sends the key "text"
       const response = await fetch(API_URL + "/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -34,12 +114,10 @@ function App() {
       }
 
       const data = await response.json();
-      setReply(data.reply);
-      setIsError(false);
+      say(data.reply, false);
       setText("");
     } catch {
-      setReply("I can't reach my backend right now. Please start it and try again.");
-      setIsError(true);
+      say("I can't reach my backend right now. Please start it and try again.", true);
     } finally {
       setIsSending(false);
     }
@@ -52,92 +130,51 @@ function App() {
 
   return (
     <main className="fredo-window">
-      <div className={isError ? "bubble bubble-error" : "bubble"}>{reply}</div>
-
-      <div className={`fredo-character ${sleeping ? "sleeping" : ""}`}>
-
-        <div className="aura" />
-
-        {/* Wings */}
-        <div className="wing wing-left" />
-        <div className="wing wing-right" />
-
-        {/* Body */}
-        <div className="body">
-          {/* Arms */}
-          <div className="arm arm-left">
-            <div className="hand" />
-          </div>
-
-          <div className="arm arm-right">
-            <div className="hand" />
-          </div>
-
-          {/* Legs */}
-          <div className="leg leg-left">
-            <div className="foot" />
-          </div>
-
-          <div className="leg leg-right">
-            <div className="foot" />
-          </div>
-
-          <div className="chest-star">★</div>
-        </div>
-
-        {/* Head */}
-        <div className="head">
-          <div className="hair">
-            <div className="hair-curl" />
-          </div>
-
-          <div className="ear ear-left" />
-          <div className="ear ear-right" />
-
-          <div
-            className="face"
-            onClick={() => setSleeping(!sleeping)}
-            title="Click Fredo to sleep or wake up"
-          >
-            <div className="forehead-star">★</div>
-
-            <div className="eyes">
-              <div className="eye"><span /></div>
-              <div className="eye"><span /></div>
-            </div>
-
-            <div className="cheek cheek-left" />
-            <div className="cheek cheek-right" />
-
-            <div className="mouth" />
-
-            {sleeping && (
-              <div className="sleep-eyes">z Z</div>
-            )}
-          </div>
-        </div>
-
-        {/* Scarf */}
-        <div className="scarf" />
-
-        {/* Magical sparkles */}
-        <span className="sparkle sparkle-one">✦</span>
-        <span className="sparkle sparkle-two">✧</span>
-        <span className="sparkle sparkle-three">✦</span>
-
-        <div className="shadow" />
+      <div
+        key={reply}
+        className={isError ? "bubble bubble-error" : "bubble"}
+        style={{ visibility: bubbleVisible ? "visible" : "hidden" }}
+      >
+        {reply}
       </div>
 
-      <form className="chat-form" onSubmit={handleSubmit}>
-        <input
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder="Say something to Fredo..."
-        />
-        <button type="submit" disabled={isSending}>
-          {isSending ? "..." : "Send"}
+      <Character
+        sleeping={sleeping}
+        angry={angry}
+        onFaceClick={() => {
+          setAngry(false);
+          setSleeping(!sleeping);
+        }}
+        onFaceContextMenu={() => {
+          // test-only: right-click the face to see the angry look
+          setSleeping(false);
+          setAngry(!angry);
+        }}
+      />
+
+      {open === "chat" && (
+        <form className="chat-form" onSubmit={handleSubmit}>
+          <input
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder="Say something to Fredo..."
+          />
+          <button type="submit" disabled={isSending}>
+            {isSending ? "..." : "Send"}
+          </button>
+        </form>
+      )}
+
+      {open === "tasks" && <TaskPanel onMessage={say} />}
+
+      <div className="button-row">
+        <button className="panel-toggle" onClick={() => toggle("chat")}>
+          {open === "chat" ? "Close talk" : "Talk"}
         </button>
-      </form>
+        <button className="panel-toggle" onClick={() => toggle("tasks")}>
+          {open === "tasks" ? "Close tasks" : "Tasks"}
+        </button>
+      </div>
     </main>
   );
 }
