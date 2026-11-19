@@ -21,7 +21,18 @@ from app.schemas import (
     TaskUpdate,
 )
 
+from app.intents import (
+    apply_ai_intent,
+    apply_command,
+    detect_command,
+    fallback_lines,
+    reaction_situation,
+)
+from app.migrate import ensure_column
+
 Base.metadata.create_all(bind=engine)
+
+ensure_column(engine, "tasks", "snoozed_until", "DATETIME")
 
 app = FastAPI(title="Fredo API")
 
@@ -158,15 +169,43 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
     # build the context first, so the new message is not repeated inside it
     context = build_context(db)
     repository.save_turn(db, "user", payload.text)
+    pending = repository.list_tasks(db, "pending")
 
-    situation = f'The user says: "{payload.text}"\nReply as Fredo.'
-    reply, _error = ask_fredo(situation, context)
+    event = None
+    source = "gemini"
+    command = detect_command(payload.text, pending)
 
-    if reply is None:
-        reply = {"lines": OFFLINE_CHAT_LINES, "mood": "sad", "action": "none"}
-        source = "fallback"
+    if command is not None and command.task is None:
+        # more than one task could fit: ask which one (no AI needed)
+        names = ", ".join(task.title for task in command.candidates[:5])
+        reply = {
+            "lines": [f"Which one do you mean? I see: {names}."],
+            "mood": "thinking",
+            "action": "none",
+        }
+        source = "rules"
+
+    elif command is not None:
+        # a clear command: do it with plain code, then let Fredo react
+        event = apply_command(db, command.intent, command.task, command.minutes)
+        reply, _error = ask_fredo(reaction_situation(event), build_context(db))
+        if reply is None:
+            mood = "proud" if event["type"] == "task_done" else "happy"
+            reply = {"lines": fallback_lines(event), "mood": mood, "action": "none"}
+            source = "fallback"
+
     else:
-        source = "gemini"
+        # normal talk. Gemini may also recognise a command we did not
+        situation = f'The user says: "{payload.text}"\nReply as Fredo.'
+        reply, _error = ask_fredo(situation, context)
+        if reply is None:
+            reply = {"lines": OFFLINE_CHAT_LINES, "mood": "sad", "action": "none"}
+            source = "fallback"
+        else:
+            event, problem_lines = apply_ai_intent(db, reply, pending)
+            if problem_lines is not None:
+                reply["lines"] = problem_lines
+                reply["mood"] = "thinking"
 
     repository.save_turn(db, "fredo", " ".join(reply["lines"]))
 
@@ -176,4 +215,5 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
         "mood": reply["mood"],
         "action": reply["action"],
         "source": source,
+        "event": event,
     }

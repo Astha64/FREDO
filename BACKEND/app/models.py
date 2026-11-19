@@ -33,6 +33,7 @@ class Task(Base):
     snooze_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, default=None)
+    snoozed_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, default=None)
 
 class ChatTurn(Base):
     __tablename__ = "chat_turns"

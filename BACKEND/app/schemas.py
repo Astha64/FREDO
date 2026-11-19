@@ -52,6 +52,7 @@ class TaskOut(BaseModel):
     snooze_count: int
     created_at: datetime
     completed_at: Optional[datetime]
+    snoozed_until: Optional[datetime] = None
 
 class ChatRequest(BaseModel):
     text: Annotated[

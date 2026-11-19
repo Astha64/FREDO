@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models import ChatTurn, Message, Task, utc_now
 from app.schemas import TaskCreate, TaskUpdate
 
+from datetime import datetime, timedelta, timezone
 
 def save_message(db: Session, text: str) -> Message:
     message = Message(text=text)
@@ -84,3 +85,10 @@ def recent_turns(db: Session, limit: int = 8) -> list[ChatTurn]:
     turns = list(db.scalars(statement).all())
     turns.reverse()  # oldest first
     return turns
+
+def snooze_task(db: Session, task: Task, minutes: int) -> Task:
+    task.snooze_count += 1
+    task.snoozed_until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    db.commit()
+    db.refresh(task)
+    return task

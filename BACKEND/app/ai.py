@@ -11,6 +11,8 @@ from app.persona import ALLOWED_ACTIONS, ALLOWED_MOODS, SYSTEM_PROMPT
 
 _client = None
 
+ALLOWED_INTENTS = ["chat", "complete_task", "snooze_task"]
+
 
 def ai_is_configured() -> bool:
     return bool(config.GEMINI_API_KEY)
@@ -31,6 +33,18 @@ def _clean_error(error: Exception) -> str:
     if config.GEMINI_API_KEY:
         message = message.replace(config.GEMINI_API_KEY, "***")
     return message[:300]
+
+
+def _to_int(value) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
 
 
 def parse_reply(raw: Optional[str]) -> Optional[dict]:
@@ -61,10 +75,14 @@ def parse_reply(raw: Optional[str]) -> Optional[dict]:
 
     mood = data.get("mood")
     action = data.get("action")
+    intent = data.get("intent")
     return {
         "lines": clean,
         "mood": mood if mood in ALLOWED_MOODS else "happy",
         "action": action if action in ALLOWED_ACTIONS else "none",
+        "intent": intent if intent in ALLOWED_INTENTS else "chat",
+        "task_id": _to_int(data.get("task_id")),
+        "minutes": _to_int(data.get("minutes")),
     }
 
 
