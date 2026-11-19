@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import type { SyntheticEvent } from "react";
 import Character from "./Character";
 import TaskPanel from "./TaskPanel";
-import { API_URL } from "./api";
+import { API_URL, createTask } from "./api";
+import type { TaskDraft } from "./api";
 import { ACTION_MS, IDLE_ACTIONS, MOODS, POKE_ACTIONS, pick } from "./behavior";
 import type { Action, Mood } from "./behavior";
 
@@ -11,6 +12,7 @@ const WIDTH = 340;
 const BASE_HEIGHT = 400;
 const CHAT_EXTRA = 50;
 const PANEL_EXTRA = 300;
+const DRAFT_EXTRA = 230;
 const BUBBLE_SECONDS = 15;
 const SLEEP_AFTER_SECONDS = 300; // falls asleep after 5 quiet minutes (use 20 to test)
 
@@ -31,6 +33,9 @@ function App() {
   const [isError, setIsError] = useState(false);
   const [bubbleVisible, setBubbleVisible] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const draftSaveLock = useRef(false);
 
   const bubbleTimer = useRef<number | undefined>(undefined);
   const talkTimer = useRef<number | undefined>(undefined);
@@ -156,17 +161,20 @@ function App() {
   }, []);
 
   // Make the window the right size for what is open
-  useEffect(() => {
-    let height = BASE_HEIGHT;
-    if (open === "chat") height += CHAT_EXTRA;
-    if (open === "tasks") height += PANEL_EXTRA;
-    window.fredo?.resizeWindow(WIDTH, height);
-  }, [open]);
+ useEffect(() => {
+  let height = BASE_HEIGHT;
 
-  function toggle(target: "chat" | "tasks") {
+  if (open === "chat") height += CHAT_EXTRA;
+  if (open === "tasks") height += PANEL_EXTRA;
+  if (taskDraft) height += DRAFT_EXTRA;
+
+  window.fredo?.resizeWindow(WIDTH, height);
+}, [open, taskDraft]);
+
+  function toggle(panel: "chat" | "tasks") {
     touch();
     setSleeping(false);
-    setOpen(open === target ? "none" : target);
+    setOpen((current) => (current === panel ? "none" : panel));
   }
 
   function toggleWalk() {
@@ -240,6 +248,51 @@ function App() {
     say("Mood: " + next, false);
   }
 
+  async function confirmTaskDraft() {
+  if (!taskDraft || draftSaveLock.current) return;
+
+  if (!taskDraft.title.trim()) {
+    say("Please give the task a title first.", true);
+    return;
+  }
+
+  if (taskDraft.needs_clarification && !taskDraft.due_date) {
+    say(
+      taskDraft.clarification_question || "Please clarify the deadline first.",
+      true
+    );
+    return;
+  }
+
+  draftSaveLock.current = true;
+  setSavingDraft(true);
+
+  try {
+    await createTask({
+      title: taskDraft.title.trim(),
+      why: taskDraft.why.trim(),
+      consequence: taskDraft.consequence.trim(),
+      due_date: taskDraft.due_date || null,
+    });
+
+    setTaskDraft(null);
+    say("Your task is saved! Let's get it done.", false);
+    playAction("jump");
+
+  } catch {
+    say("I couldn't save that task. Please try again.", true);
+
+  } finally {
+    draftSaveLock.current = false;
+    setSavingDraft(false);
+  }
+}
+
+function cancelTaskDraft() {
+  setTaskDraft(null);
+  say("Okay, I won't save that task.", false);
+}
+
   async function sendMessage() {
     const message = text.trim();
 
@@ -262,7 +315,9 @@ function App() {
       }
 
       const data = await response.json();
+
       setText("");
+      setTaskDraft(data.task_draft ?? null);
       sayLines(data.lines);
     } catch {
       say("I can't reach my backend right now. Please start it and try again.", true);
@@ -311,16 +366,110 @@ function App() {
         </form>
       )}
 
+      {taskDraft && (
+  <div className="task-draft-card">
+    <h3>Let's check your task!</h3>
+
+    {taskDraft.needs_clarification && (
+      <p className="draft-question">
+        {taskDraft.clarification_question}
+      </p>
+    )}
+
+    <label>Task title</label>
+    <input
+      value={taskDraft.title}
+      onChange={(e) =>
+        setTaskDraft({ ...taskDraft, title: e.target.value })
+      }
+    />
+
+    <label>Deadline</label>
+    <input
+      type="date"
+      value={taskDraft.due_date ?? ""}
+      onChange={(e) =>
+        setTaskDraft({
+          ...taskDraft,
+          due_date: e.target.value || null,
+          needs_clarification: e.target.value
+            ? false
+            : taskDraft.needs_clarification,
+          clarification_question: e.target.value
+            ? null
+            : taskDraft.clarification_question,
+        })
+      }
+    />
+
+    {taskDraft.needs_clarification && (
+      <button
+        type="button"
+        className="draft-secondary"
+        onClick={() =>
+          setTaskDraft({
+            ...taskDraft,
+            due_date: null,
+            needs_clarification: false,
+            clarification_question: null,
+          })
+        }
+      >
+        No deadline
+      </button>
+    )}
+
+    <label>Why does it matter?</label>
+    <input
+      value={taskDraft.why}
+      onChange={(e) =>
+        setTaskDraft({ ...taskDraft, why: e.target.value })
+      }
+    />
+
+    <label>If you skip it, what happens?</label>
+    <input
+      value={taskDraft.consequence}
+      onChange={(e) =>
+        setTaskDraft({ ...taskDraft, consequence: e.target.value })
+      }
+    />
+
+    <div className="draft-buttons">
+      <button
+        type="button"
+        onClick={confirmTaskDraft}
+        disabled={
+          savingDraft ||
+          !taskDraft.title.trim() ||
+          (taskDraft.needs_clarification && !taskDraft.due_date)
+        }
+      >
+        {savingDraft ? "Saving..." : "Confirm"}
+      </button>
+
+      <button
+        type="button"
+        className="draft-cancel"
+        onClick={cancelTaskDraft}
+        disabled={savingDraft}
+      >
+        Cancel
+      </button>
+    </div>
+  </div>
+)}
+
       {open === "tasks" && <TaskPanel onMessage={say} onCelebrate={celebrate} />}
 
       <div className="button-row">
-        <button className="panel-toggle" onClick={() => toggle("chat")}>
+        <button type="button" className="panel-toggle" onClick={() => toggle("chat")}>
           {open === "chat" ? "Close talk" : "Talk"}
         </button>
-        <button className="panel-toggle" onClick={() => toggle("tasks")}>
+        <button type="button" className="panel-toggle" onClick={() => toggle("tasks")}>
           {open === "tasks" ? "Close tasks" : "Tasks"}
         </button>
-        <button className="panel-toggle" onClick={toggleWalk}>
+        <button type="button" className="panel-toggle" onClick={toggleWalk}>
           {walkMode === "wander" ? "Stay here" : "Walk"}
         </button>
       </div>

@@ -7,11 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from app import config, models, repository
-from app.ai import (
-    ai_is_configured,
-    ask_fredo,
-    extract_task_draft,
-)
+from app.ai import ai_is_configured, ask_fredo
 from app.context import build_context
 from app.database import Base, engine, get_db
 from app.greeting import build_greeting_lines
@@ -142,15 +138,15 @@ def ai_test():
     return {"ok": reply is not None, "reply": reply, "error": error}
 
 
-@app.post("/ai/test-task-draft")
-def ai_test_task_draft(payload: ChatRequest):
-    draft, error = extract_task_draft(payload.text)
+# @app.post("/ai/test-task-draft")
+# def ai_test_task_draft(payload: ChatRequest):
+#     draft, error = extract_task_draft(payload.text)
 
-    return {
-        "ok": draft is not None,
-        "draft": draft,
-        "error": error,
-    }
+#     return {
+#         "ok": draft is not None,
+#         "draft": draft,
+#         "error": error,
+#     }
 
 
 
@@ -188,6 +184,7 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
     pending = repository.list_tasks(db, "pending")
 
     event = None
+    task_draft = None
     source = "gemini"
     command = detect_command(payload.text, pending)
 
@@ -209,21 +206,32 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
             mood = "proud" if event["type"] == "task_done" else "happy"
             reply = {"lines": fallback_lines(event), "mood": mood, "action": "none"}
             source = "fallback"
-
     else:
-        # normal talk. Gemini may also recognise a command we did not
+        # A normal message (including a possible AI task command) goes to Gemini.
         situation = f'The user says: "{payload.text}"\nReply as Fredo.'
         reply, _error = ask_fredo(situation, context)
         if reply is None:
-            reply = {"lines": OFFLINE_CHAT_LINES, "mood": "sad", "action": "none"}
+            reply = {
+                "lines": OFFLINE_CHAT_LINES,
+                "mood": "sad",
+                "action": "none",
+            }
             source = "fallback"
+        elif reply.get("intent") == "create_task_draft":
+            task_draft = reply.get("task_draft")
+
+            reply["lines"] = [
+                "I've prepared a task draft for you.",
+                "Check the details before I save anything."
+            ]
+            reply["mood"] = "thinking"
+
         else:
             event, problem_lines = apply_ai_intent(db, reply, pending)
+
             if problem_lines is not None:
                 reply["lines"] = problem_lines
                 reply["mood"] = "thinking"
-
-    repository.save_turn(db, "fredo", " ".join(reply["lines"]))
 
     return {
         "lines": reply["lines"],
@@ -232,4 +240,5 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
         "action": reply["action"],
         "source": source,
         "event": event,
+        "task_draft": task_draft,
     }

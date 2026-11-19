@@ -21,6 +21,16 @@ export type NewTask = {
   due_date: string | null;
 };
 
+export type TaskDraft = {
+  is_task: boolean;
+  title: string;
+  why: string;
+  consequence: string;
+  due_date: string | null;
+  needs_clarification: boolean;
+  clarification_question: string | null;
+};
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(API_URL + path, {
     headers: { "Content-Type": "application/json" },
