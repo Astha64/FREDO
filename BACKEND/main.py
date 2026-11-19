@@ -7,7 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from app import config, models, repository
-from app.ai import ai_is_configured, ask_fredo
+from app.ai import (
+    ai_is_configured,
+    ask_fredo,
+    extract_task_draft,
+)
 from app.context import build_context
 from app.database import Base, engine, get_db
 from app.greeting import build_greeting_lines
@@ -136,6 +140,18 @@ def ai_test():
         "No personal context for this test.",
     )
     return {"ok": reply is not None, "reply": reply, "error": error}
+
+
+@app.post("/ai/test-task-draft")
+def ai_test_task_draft(payload: ChatRequest):
+    draft, error = extract_task_draft(payload.text)
+
+    return {
+        "ok": draft is not None,
+        "draft": draft,
+        "error": error,
+    }
+
 
 
 @app.get("/greeting")

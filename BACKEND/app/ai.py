@@ -1,14 +1,19 @@
 # backend/app/ai.py
 import json
 import re
+from datetime import date
 from typing import Optional
 
 from google import genai
 from google.genai import types
 
 from app import config
-from app.persona import ALLOWED_ACTIONS, ALLOWED_MOODS, SYSTEM_PROMPT
-
+from app.persona import (
+    ALLOWED_ACTIONS,
+    ALLOWED_MOODS,
+    SYSTEM_PROMPT,
+    TASK_EXTRACTION_PROMPT,
+)
 _client = None
 
 ALLOWED_INTENTS = ["chat", "complete_task", "snooze_task"]
@@ -115,3 +120,137 @@ def ask_fredo(situation: str, context: str) -> tuple[Optional[dict], Optional[st
         print("[ai] Gemini answered, but not in a usable shape")
         return None, "Gemini answered, but the answer was not usable JSON."
     return reply, None
+
+
+def parse_task_draft(raw: Optional[str]) -> Optional[dict]:
+    """Validate Gemini's extracted task draft. This function never saves it."""
+    if not raw:
+        return None
+
+    text = raw.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    if not isinstance(data.get("is_task"), bool):
+        return None
+
+    if not data["is_task"]:
+        return {
+            "is_task": False,
+            "title": "",
+            "why": "",
+            "consequence": "",
+            "due_date": None,
+            "needs_clarification": False,
+            "clarification_question": None,
+        }
+
+    title = data.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return None
+
+    title = title.strip()
+    if len(title) > 200:
+        title = title[:200].strip()
+
+    why = data.get("why", "")
+    consequence = data.get("consequence", "")
+
+    if not isinstance(why, str) or not isinstance(consequence, str):
+        return None
+
+    why = why.strip()[:500]
+    consequence = consequence.strip()[:500]
+
+    due_date = data.get("due_date")
+
+    if due_date is not None:
+        if not isinstance(due_date, str):
+            return None
+
+        try:
+            date.fromisoformat(due_date)
+        except ValueError:
+            return None
+
+    needs_clarification = data.get("needs_clarification", False)
+
+    if not isinstance(needs_clarification, bool):
+        return None
+
+    question = data.get("clarification_question")
+
+    if question is not None and not isinstance(question, str):
+        return None
+
+    if needs_clarification:
+        due_date = None
+        question = (question or "").strip()[:300]
+
+    return {
+        "is_task": True,
+        "title": title,
+        "why": why,
+        "consequence": consequence,
+        "due_date": due_date,
+        "needs_clarification": needs_clarification,
+        "clarification_question": question,
+    }
+
+
+def extract_task_draft(
+    user_message: str,
+    today: Optional[date] = None,
+) -> tuple[Optional[dict], Optional[str]]:
+    """
+    Ask Gemini to extract a proposed task.
+    Returns (draft, error). Does not create or save a task.
+    """
+    if not ai_is_configured():
+        return None, "GEMINI_API_KEY is empty. Fill backend/.env first."
+
+    current_date = today or date.today()
+
+    prompt = f"""
+CURRENT DATE: {current_date.isoformat()}
+
+USER MESSAGE:
+{user_message}
+
+Extract the task details according to your instructions.
+Return only the required JSON.
+"""
+
+    try:
+        response = _get_client().models.generate_content(
+            model=config.GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=TASK_EXTRACTION_PROMPT,
+                response_mime_type="application/json",
+                temperature=0.2,
+                max_output_tokens=1000,
+            ),
+        )
+
+        raw = response.text
+
+    except Exception as error:
+        message = _clean_error(error)
+        print("[ai] Task extraction failed:", message)
+        return None, message
+
+    draft = parse_task_draft(raw)
+
+    if draft is None:
+        return None, "Gemini returned an invalid task draft."
+
+    return draft, None
