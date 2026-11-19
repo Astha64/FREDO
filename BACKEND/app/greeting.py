@@ -27,7 +27,7 @@ def due_phrase(task: Task, today: date) -> str:
 
 
 def build_greeting_lines(tasks: list[Task], today: date) -> list[str]:
-    """Returns the greeting as separate lines, one bubble each."""
+    """Plain greeting used when the AI is not available."""
     lines = [time_greeting() + "!"]
 
     if not tasks:

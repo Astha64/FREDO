@@ -169,7 +169,7 @@ function App() {
     setOpen(open === target ? "none" : target);
   }
 
-    function toggleWalk() {
+  function toggleWalk() {
     touch();
     const next = walkMode === "wander" ? "stay" : "wander";
     setWalkMode(next);
@@ -209,7 +209,7 @@ function App() {
     window.setTimeout(() => setConfetti(false), 3200);
   }
 
-   function handleFaceClick(shift: boolean) {
+  function handleFaceClick(shift: boolean) {
     touch();
 
     // clicking Fredo while he walks makes him stop
@@ -249,8 +249,9 @@ function App() {
     }
 
     setIsSending(true);
+    say("Let me think...", false);
     try {
-      const response = await fetch(API_URL + "/messages", {
+      const response = await fetch(API_URL + "/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: message }),
@@ -261,15 +262,15 @@ function App() {
       }
 
       const data = await response.json();
-      say(data.reply, false);
       setText("");
+      sayLines(data.lines);
     } catch {
       say("I can't reach my backend right now. Please start it and try again.", true);
     } finally {
       setIsSending(false);
     }
   }
-
+  
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     sendMessage();

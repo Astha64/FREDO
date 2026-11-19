@@ -1,17 +1,25 @@
 # backend/main.py
-from typing import Optional
-
 from datetime import date
-
-from app.greeting import build_greeting_lines
+from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from app import models, repository
+from app import config, models, repository
+from app.ai import ai_is_configured, ask_fredo
+from app.context import build_context
 from app.database import Base, engine, get_db
-from app.schemas import MessageCreate, MessageOut, TaskCreate, TaskOut, TaskUpdate
+from app.greeting import build_greeting_lines
+from app.persona import GREETING_SITUATION
+from app.schemas import (
+    ChatRequest,
+    MessageCreate,
+    MessageOut,
+    TaskCreate,
+    TaskOut,
+    TaskUpdate,
+)
 
 Base.metadata.create_all(bind=engine)
 
@@ -26,20 +34,23 @@ app.add_middleware(
 
 FIXED_REPLY = "I received your message."
 
+OFFLINE_CHAT_LINES = [
+    "My brain is not reachable right now, so I cannot think of anything clever.",
+    "I saved what you said, though.",
+]
+
 
 @app.get("/health")
 def health_check():
     return {"status": "ok", "application": "Fredo"}
 
 
+# ---------- old Phase 1 and 4 routes (kept for testing) ----------
+
 @app.post("/message")
 def receive_message(payload: dict):
     message = payload.get("message", "")
-    return {
-        "received": True,
-        "message": message,
-        "reply": FIXED_REPLY,
-    }
+    return {"received": True, "message": message, "reply": FIXED_REPLY}
 
 
 @app.post("/messages")
@@ -57,6 +68,8 @@ def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
 def read_messages(db: Session = Depends(get_db)):
     return repository.list_messages(db)
 
+
+# ---------- tasks (Phase 5) ----------
 
 def get_task_or_404(db: Session, task_id: int):
     task = repository.get_task(db, task_id)
@@ -93,10 +106,74 @@ def remove_task(task_id: int, db: Session = Depends(get_db)):
     repository.delete_task(db, task)
     return Response(status_code=204)
 
+
+# ---------- the AI brain (Phase 7) ----------
+
+@app.get("/ai/status")
+def ai_status():
+    return {
+        "configured": ai_is_configured(),
+        "model": config.GEMINI_MODEL,
+        "share_task_details": config.AI_SHARE_TASKS,
+    }
+
+
+@app.get("/ai/test")
+def ai_test():
+    reply, error = ask_fredo(
+        "Say a very short hello to the user.",
+        "No personal context for this test.",
+    )
+    return {"ok": reply is not None, "reply": reply, "error": error}
+
+
 @app.get("/greeting")
 def greeting(db: Session = Depends(get_db)):
     tasks = repository.list_tasks(db, "pending")
+
+    lines = build_greeting_lines(tasks, date.today())
+    source = "template"
+    mood = "happy"
+    action = "wave"
+
+    if ai_is_configured():
+        reply, _error = ask_fredo(GREETING_SITUATION, build_context(db))
+        if reply is not None:
+            lines = reply["lines"]
+            mood = reply["mood"]
+            action = reply["action"]
+            source = "gemini"
+
     return {
-        "lines": build_greeting_lines(tasks, date.today()),
+        "lines": lines,
+        "mood": mood,
+        "action": action,
+        "source": source,
         "task_count": len(tasks),
+    }
+
+
+@app.post("/chat")
+def chat(payload: ChatRequest, db: Session = Depends(get_db)):
+    # build the context first, so the new message is not repeated inside it
+    context = build_context(db)
+    repository.save_turn(db, "user", payload.text)
+
+    situation = f'The user says: "{payload.text}"\nReply as Fredo.'
+    reply, _error = ask_fredo(situation, context)
+
+    if reply is None:
+        reply = {"lines": OFFLINE_CHAT_LINES, "mood": "sad", "action": "none"}
+        source = "fallback"
+    else:
+        source = "gemini"
+
+    repository.save_turn(db, "fredo", " ".join(reply["lines"]))
+
+    return {
+        "lines": reply["lines"],
+        "reply": " ".join(reply["lines"]),
+        "mood": reply["mood"],
+        "action": reply["action"],
+        "source": source,
     }

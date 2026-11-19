@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Message, Task, utc_now
+from app.models import ChatTurn, Message, Task, utc_now
 from app.schemas import TaskCreate, TaskUpdate
 
 
@@ -70,3 +70,17 @@ def complete_task(db: Session, task: Task) -> Task:
 def delete_task(db: Session, task: Task) -> None:
     db.delete(task)
     db.commit()
+
+def save_turn(db: Session, role: str, text: str) -> ChatTurn:
+    turn = ChatTurn(role=role, text=text)
+    db.add(turn)
+    db.commit()
+    db.refresh(turn)
+    return turn
+
+
+def recent_turns(db: Session, limit: int = 8) -> list[ChatTurn]:
+    statement = select(ChatTurn).order_by(ChatTurn.id.desc()).limit(limit)
+    turns = list(db.scalars(statement).all())
+    turns.reverse()  # oldest first
+    return turns
