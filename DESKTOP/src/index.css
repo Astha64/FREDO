@@ -1226,3 +1226,24 @@ body {
   opacity: 0.5;
   cursor: default;
 }
+
+.chat-form .icon-btn {
+  padding: 0;
+  width: 34px;
+  flex: none;
+  background: rgba(255, 255, 255, 0.92);
+  color: #7a4a2b;
+  font-size: 15px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.chat-form .icon-btn.recording {
+  background: #ff6b6b;
+  color: white;
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+
+@keyframes rec-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.6); }
+  50%      { box-shadow: 0 0 0 7px rgba(255, 107, 107, 0); }
+}

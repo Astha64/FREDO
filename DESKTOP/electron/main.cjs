@@ -1,5 +1,5 @@
 // desktop/electron/main.cjs
-const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, session } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -279,6 +279,21 @@ ipcMain.on('fredo:set-busy', (_event, value) => {
   busy = Boolean(value);
 });
 
+function setupPermissions() {
+  // Allow the microphone for Fredo's own page only, and nothing else.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    const types = details.mediaTypes || [];
+    const ok =
+      permission === 'media' &&
+      details.requestingUrl.startsWith(DEV_URL) &&
+      types.every((t) => t === 'audio');
+    callback(ok);
+  });
+  session.defaultSession.setPermissionCheckHandler(
+    (_wc, permission, origin) => permission === 'media' && origin.startsWith(DEV_URL)
+  );
+}
+
 /* ---------- app life ---------- */
 
 if (!app.requestSingleInstanceLock()) {
@@ -288,6 +303,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => showWindow());
 
   app.whenReady().then(async () => {
+    setupPermissions(); 
     await startBackend();
     createWindow();
     createTray();

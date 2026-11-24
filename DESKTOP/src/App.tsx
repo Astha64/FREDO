@@ -7,6 +7,8 @@ import { API_URL, createTask } from "./api";
 import type { TaskDraft } from "./api";
 import { ACTION_MS, IDLE_ACTIONS, MOODS, POKE_ACTIONS, pick } from "./behavior";
 import type { Action, Mood } from "./behavior";
+import { MAX_RECORD_MS, loadMuted, saveMuted, speak, startRecording, stopSpeaking, transcribe } from "./voice";
+import type { Recorder } from "./voice";
 
 const WIDTH = 340;
 const BASE_HEIGHT = 400;
@@ -35,6 +37,14 @@ function App() {
   const [isSending, setIsSending] = useState(false);
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [muted, setMuted] = useState(loadMuted());
+  const [voiceState, setVoiceState] = useState<"idle" | "recording" | "transcribing">("idle");
+  const recorderRef = useRef<Recorder | null>(null);
+  const recordTimer = useRef<number | undefined>(undefined);
+  const mutedRef = useRef(muted);
+  useEffect(() => {
+  mutedRef.current = muted;
+  });
   const draftSaveLock = useRef(false);
 
   const bubbleTimer = useRef<number | undefined>(undefined);
@@ -69,50 +79,70 @@ function App() {
   }
 
   // Put one message in the bubble. It hides itself later.
-  function show(message: string, error: boolean) {
-    setReply(message);
-    setIsError(error);
-    setBubbleVisible(true);
-    window.clearTimeout(bubbleTimer.current);
-    bubbleTimer.current = window.setTimeout(
-      () => setBubbleVisible(false),
-      BUBBLE_SECONDS * 1000
-    );
+  function show(message: string, error: boolean, voiced = false) {
+  setReply(message);
+  setIsError(error);
+  setBubbleVisible(true);
+  window.clearTimeout(bubbleTimer.current);
+  bubbleTimer.current = window.setTimeout(() => setBubbleVisible(false), BUBBLE_SECONDS * 1000);
 
-    // the mouth moves while he speaks
-    setTalking(true);
-    window.clearTimeout(talkTimer.current);
+  setTalking(true);
+  window.clearTimeout(talkTimer.current);
+  if (!voiced) {
     talkTimer.current = window.setTimeout(
       () => setTalking(false),
       Math.min(6000, Math.max(1200, message.length * 60))
     );
-  }
+  } // when voiced, the speech itself decides when the mouth stops
+}
 
   // Fredo says one thing (this also stops a greeting that is still going)
-  function say(message: string, error: boolean) {
-    speechRun.current += 1;
-    touch();
-    setSleeping(false);
-    if (error) setMoodFor("sad", 4000);
+  // Fredo says one thing. Pass voice=false for filler like "Let me think..."
+function say(message: string, error: boolean, voice = true) {
+  speechRun.current += 1;
+  const run = speechRun.current;
+  touch();
+  setSleeping(false);
+  if (error) setMoodFor("sad", 4000);
+  stopSpeaking();
+
+  if (voice && !mutedRef.current) {
+    show(message, error, true);
+    speak(message).then(() => {
+      if (speechRun.current === run) setTalking(false);
+    });
+  } else {
     show(message, error);
   }
+}
 
-  // Fredo says several lines, one after another, like a person talking
-  async function sayLines(lines: string[]) {
-    speechRun.current += 1;
-    const run = speechRun.current;
-    setSleeping(false);
+  // Fredo says several lines, one after another
+async function sayLines(lines: string[], voice = true) {
+  speechRun.current += 1;
+  const run = speechRun.current;
+  setSleeping(false);
+  stopSpeaking();
 
-    for (let i = 0; i < lines.length; i++) {
-      if (speechRun.current !== run) return; // something newer started
+  const speaking = voice && !mutedRef.current;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (speechRun.current !== run) return; // something newer started
+
+    if (speaking) {
+      show(lines[i], false, true);
+      await speak(lines[i]);
+      if (speechRun.current !== run) return;
+      setTalking(false);
+      if (i < lines.length - 1) await new Promise((r) => setTimeout(r, 350));
+    } else {
       show(lines[i], false);
-
       if (i < lines.length - 1) {
         const readTime = Math.max(2500, 1500 + lines[i].length * 55);
         await new Promise((resolve) => setTimeout(resolve, readTime));
       }
     }
   }
+}
 
   // Greet by himself when the app opens
   useEffect(() => {
@@ -124,7 +154,7 @@ function App() {
           if (!response.ok) throw new Error("bad status");
           const data = await response.json();
           playAction("wave");
-          sayLines(data.lines);
+          sayLines(data.lines, false);
           return;
         } catch {
           await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -172,10 +202,16 @@ function App() {
 }, [open, taskDraft]);
 
   function toggle(panel: "chat" | "tasks") {
-    touch();
-    setSleeping(false);
-    setOpen((current) => (current === panel ? "none" : panel));
+  touch();
+  setSleeping(false);
+  if (voiceState === "recording") {
+    window.clearTimeout(recordTimer.current);
+    recorderRef.current?.cancel();
+    recorderRef.current = null;
+    setVoiceState("idle");
   }
+  setOpen((current) => (current === panel ? "none" : panel));
+}
 
   function toggleWalk() {
     touch();
@@ -293,38 +329,94 @@ function cancelTaskDraft() {
   say("Okay, I won't save that task.", false);
 }
 
-  async function sendMessage() {
-    const message = text.trim();
+  async function sendMessage(spoken?: string) {
+  const message = (spoken ?? text).trim();          // 🔧 change 1 + 2
 
-    if (message === "") {
-      say("Please type a message first.", true);
-      return;
-    }
-
-    setIsSending(true);
-    say("Let me think...", false);
-    try {
-      const response = await fetch(API_URL + "/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: message }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Backend answered with status " + response.status);
-      }
-
-      const data = await response.json();
-
-      setText("");
-      setTaskDraft(data.task_draft ?? null);
-      sayLines(data.lines);
-    } catch {
-      say("I can't reach my backend right now. Please start it and try again.", true);
-    } finally {
-      setIsSending(false);
-    }
+  if (message === "") {
+    say("Please type a message first.", true);
+    return;
   }
+
+  setIsSending(true);
+  say("Let me think...", false, false);              // 🔧 change 3: don't speak this one
+  try {
+    const response = await fetch(API_URL + "/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: message, voice: spoken !== undefined }),  // 🔧 change 4
+    });
+
+    if (!response.ok) {
+      throw new Error("Backend answered with status " + response.status);
+    }
+
+    const data = await response.json();
+
+    setText("");
+    setTaskDraft(data.task_draft ?? null);
+    sayLines(data.lines);
+  } catch {
+    say("I can't reach my backend right now. Please start it and try again.", true);
+  } finally {
+    setIsSending(false);
+  }
+}
+
+async function startListening() {
+  touch();
+  stopSpeaking();
+  try {
+    recorderRef.current = await startRecording();
+  } catch {
+    say("I can't use the microphone. Check Windows microphone permissions.", true, false);
+    return;
+  }
+  setVoiceState("recording");
+  setMood("surprised");
+  playAction("look");
+  show("I'm listening...", false);
+  recordTimer.current = window.setTimeout(stopListening, MAX_RECORD_MS);
+}
+
+async function stopListening() {
+  window.clearTimeout(recordTimer.current);
+  const recorder = recorderRef.current;
+  recorderRef.current = null;
+  if (!recorder) return;
+
+  setVoiceState("transcribing");
+  setMood("thinking");
+  show("Let me hear that again in my head...", false);
+
+  try {
+    const blob = await recorder.stop();
+    const heard = await transcribe(blob);
+    setMood("happy");
+
+    if (!heard) {
+      say("I didn't catch anything. Try again?", true, false);
+    } else {
+      setText(heard); // shows what Fredo heard in the input box
+      await sendMessage(heard);
+    }
+  } catch {
+    say("I couldn't understand that. Please try again.", true, false);
+  } finally {
+    setVoiceState("idle");
+  }
+}
+
+function toggleMic() {
+  if (voiceState === "idle") startListening();
+  else if (voiceState === "recording") stopListening();
+}
+
+function toggleMuted() {
+  const next = !muted;
+  setMuted(next);
+  saveMuted(next);
+  if (next) stopSpeaking();
+}
   
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -354,17 +446,34 @@ function cancelTaskDraft() {
       />
 
       {open === "chat" && (
-        <form className="chat-form" onSubmit={handleSubmit}>
-          <input
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            placeholder="Say something to Fredo..."
-          />
-          <button type="submit" disabled={isSending}>
-            {isSending ? "..." : "Send"}
-          </button>
-        </form>
-      )}
+  <form className="chat-form" onSubmit={handleSubmit}>
+    <input
+      value={text}
+      onChange={(event) => setText(event.target.value)}
+      placeholder="Talk to Fredo..."
+    />
+    <button
+      type="button"
+      className={voiceState === "recording" ? "icon-btn recording" : "icon-btn"}
+      onClick={toggleMic}
+      disabled={voiceState === "transcribing" || isSending}
+      title={voiceState === "recording" ? "Stop and send" : "Talk to Fredo"}
+    >
+      {voiceState === "recording" ? "⏹" : "🎤"}
+    </button>
+    <button
+      type="button"
+      className="icon-btn"
+      onClick={toggleMuted}
+      title={muted ? "Turn Fredo's voice on" : "Mute Fredo's voice"}
+    >
+      {muted ? "🔇" : "🔊"}
+    </button>
+    <button type="submit" disabled={isSending}>
+      {isSending ? "..." : "Send"}
+    </button>
+  </form>
+)}
 
       {taskDraft && (
   <div className="task-draft-card">
