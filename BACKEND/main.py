@@ -2,8 +2,9 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app import config, models, repository
@@ -12,6 +13,8 @@ from app.context import build_context
 from app.database import Base, engine, get_db
 from app.greeting import build_greeting_lines
 from app.persona import GREETING_SITUATION
+from app.voice import ALLOWED_AUDIO, MAX_AUDIO_BYTES, transcribe_audio
+
 from app.schemas import (
     ChatRequest,
     MessageCreate,
@@ -137,6 +140,26 @@ def ai_test():
     )
     return {"ok": reply is not None, "reply": reply, "error": error}
 
+# ---------- voice (Phase 10) ----------
+
+@app.post("/voice/transcribe")
+async def voice_transcribe(request: Request):
+    mime = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if mime not in ALLOWED_AUDIO:
+        raise HTTPException(status_code=415, detail="Unsupported audio type")
+
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty audio")
+    if len(data) > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Audio too long")
+
+    # the Gemini call is blocking, so keep it off the event loop
+    text, error = await run_in_threadpool(transcribe_audio, data, mime)
+    if text is None:
+        raise HTTPException(status_code=502, detail=error)
+    return {"text": text}
+
 
 # @app.post("/ai/test-task-draft")
 # def ai_test_task_draft(payload: ChatRequest):
@@ -208,7 +231,12 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
             source = "fallback"
     else:
         # A normal message (including a possible AI task command) goes to Gemini.
-        situation = f'The user says: "{payload.text}"\nReply as Fredo.'
+        note = (
+            "\n(This was spoken aloud and transcribed, so it may contain small "
+            "recognition mistakes. Do not mention that unless it is unclear.)"
+            if payload.voice else ""
+        )
+        situation = f'The user says: "{payload.text}"{note}\nReply as Fredo.'
         reply, _error = ask_fredo(situation, context)
         if reply is None:
             reply = {

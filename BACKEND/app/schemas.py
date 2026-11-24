@@ -59,6 +59,7 @@ class ChatRequest(BaseModel):
         str,
         StringConstraints(strip_whitespace=True, min_length=1, max_length=1000),
     ]
+    voice: bool = False   # True when the text came from speech recognition
 
 
 class TaskDraft(BaseModel):

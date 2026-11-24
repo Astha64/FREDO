@@ -28,6 +28,21 @@ STOP_WORDS = {
     "hr", "hrs", "half", "by", "at", "now", "again", "wrapped", "up", "as", "from",
 }
 
+NUMBER_WORDS = {
+    "five": 5, "ten": 10, "fifteen": 15, "twenty": 20, "thirty": 30,
+    "forty": 40, "forty-five": 45, "fortyfive": 45, "sixty": 60,
+    "one": 1, "two": 2, "three": 3, "four": 4, "six": 6, "eight": 8,
+}
+
+
+def words_to_digits(text: str) -> str:
+    """Speech-to-text may write 'ten minutes'. Turn number words into digits."""
+    return re.sub(
+        r"\b(" + "|".join(sorted(NUMBER_WORDS, key=len, reverse=True)) + r")\b",
+        lambda m: str(NUMBER_WORDS[m.group(1)]),
+        text,
+    )
+
 
 @dataclass
 class Command:
@@ -39,7 +54,7 @@ class Command:
 
 def _stems(text: str) -> set:
     """Important words, cut to 5 letters so 'revise' and 'revision' match."""
-    words = re.findall(r"[a-z0-9]+", text.lower())
+    words = re.findall(r"[a-z0-9]+", words_to_digits(text.lower()))
     return {w[:5] for w in words if w not in STOP_WORDS and len(w) > 1 and not w.isdigit()}
 
 
@@ -75,7 +90,7 @@ def clamp_minutes(minutes: int) -> int:
 
 
 def parse_minutes(text: str) -> int:
-    t = text.lower()
+    t = words_to_digits(text.lower())
     if "half an hour" in t or "half hour" in t:
         return 30
     match = re.search(r"(\d+)\s*(?:hours?|hrs?|h)\b", t)
